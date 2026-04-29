@@ -1,124 +1,156 @@
+#main.py
 from db import fetch_dataframe, get_connection
 from analysis import transform
 
 def main():
     print("Start ETL...")
 
-    try:
-        # ======================
-        # EXTRACT
-        # ======================
-        query = "SELECT * FROM electricity_usage"
-        df = fetch_dataframe(query)
+    df = fetch_dataframe("SELECT * FROM electricity_usage")
 
-        print(f"Data diambil: {len(df)} rows")
+    result = transform(df)
 
-        if df.empty:
-            print("Data kosong ❌")
-            return
+    if not result:
+        print("No data")
+        return
 
-        # ======================
-        # TRANSFORM
-        # ======================
-        result = transform(df)
+    conn = get_connection()
+    cursor = conn.cursor()
 
-        if not result:
-            print("Transform gagal ❌")
-            return
+    # ======================
+    # DAILY USAGE
+    # ======================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS daily_usage (
+        date DATE PRIMARY KEY,
+        total_power DOUBLE
+    )
+    """)
 
-        conn = get_connection()
-        cursor = conn.cursor()
+    data = list(result["daily_usage"].itertuples(index=False, name=None))
 
-        # ======================
-        # 1. DAILY USAGE
-        # ======================
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS daily_usage (
-            date DATE,
-            total_power DOUBLE
-        )
-        """)
+    cursor.executemany("""
+    INSERT INTO daily_usage (date, total_power)
+    VALUES (%s, %s)
+    ON DUPLICATE KEY UPDATE
+        total_power = VALUES(total_power)
+    """, data)
 
-        cursor.execute("DELETE FROM daily_usage")
+    # ======================
+    # HOURLY GLOBAL
+    # ======================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS hourly_usage (
+        hour INT PRIMARY KEY,
+        avg_power DOUBLE
+    )
+    """)
 
-        daily_df = result["daily_usage"]
-        data = list(daily_df.itertuples(index=False, name=None))
+    data = list(result["hourly_usage"].itertuples(index=False, name=None))
 
-        cursor.executemany(
-            "INSERT INTO daily_usage (date, total_power) VALUES (%s, %s)",
-            data
-        )
+    cursor.executemany("""
+    INSERT INTO hourly_usage (hour, avg_power)
+    VALUES (%s, %s)
+    ON DUPLICATE KEY UPDATE
+        avg_power = VALUES(avg_power)
+    """, data)
 
-        print("daily_usage inserted")
+    # ======================
+    # MONTHLY HOURLY
+    # ======================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS monthly_hourly_usage (
+        month VARCHAR(10),
+        hour INT,
+        avg_power DOUBLE,
+        PRIMARY KEY (month, hour)
+    )
+    """)
 
-        # ======================
-        # 2. SUMMARY STATS
-        # ======================
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS summary_stats (
-            metric VARCHAR(50),
-            value DOUBLE
-        )
-        """)
+    data = list(result["monthly_hourly_usage"].itertuples(index=False, name=None))
 
-        cursor.execute("DELETE FROM summary_stats")
+    cursor.executemany("""
+    INSERT INTO monthly_hourly_usage (month, hour, avg_power)
+    VALUES (%s, %s, %s)
+    ON DUPLICATE KEY UPDATE
+        avg_power = VALUES(avg_power)
+    """, data)
 
-        summary_data = [
-            ("avg_usage", result["avg_usage"]),
-            ("peak_hour", result["peak_hour"]),
-            ("peak_value", result["peak_value"]),
-            ("max_usage", result["max_usage"]),
-            ("min_usage", result["min_usage"]),
-        ]
+    # ======================
+    # PEAK MONTHLY
+    # ======================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS peak_monthly (
+        month VARCHAR(10) PRIMARY KEY,
+        hour INT,
+        value DOUBLE
+    )
+    """)
 
-        cursor.executemany(
-            "INSERT INTO summary_stats (metric, value) VALUES (%s, %s)",
-            summary_data
-        )
+    data = list(result["peak_monthly"].itertuples(index=False, name=None))
 
-        print("summary_stats inserted")
+    cursor.executemany("""
+    INSERT INTO peak_monthly (month, hour, value)
+    VALUES (%s, %s, %s)
+    ON DUPLICATE KEY UPDATE
+        hour = VALUES(hour),
+        value = VALUES(value)
+    """, data)
 
-        # ======================
-        # 3. SUB METERING
-        # ======================
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS sub_metering_stats (
-            type VARCHAR(50),
-            total DOUBLE
-        )
-        """)
+    # ======================
+    # SUMMARY STATS (REPLACE)
+    # ======================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS summary_stats (
+        metric VARCHAR(50) PRIMARY KEY,
+        value DOUBLE
+    )
+    """)
 
-        cursor.execute("DELETE FROM sub_metering_stats")
+    cursor.execute("DELETE FROM summary_stats")
 
-        sub = result["sub_metering"]
+    summary_data = [
+        ("avg_usage", result["avg_usage"]),
+        ("peak_hour", result["peak_hour"]),
+        ("peak_value", result["peak_value"]),
+        ("max_usage", result["max_usage"]),
+        ("min_usage", result["min_usage"]),
+    ]
 
-        sub_data = [
-            ("sub1", sub["sub1"]),
-            ("sub2", sub["sub2"]),
-            ("sub3", sub["sub3"]),
-        ]
+    cursor.executemany("""
+    INSERT INTO summary_stats (metric, value)
+    VALUES (%s, %s)
+    """, summary_data)
 
-        cursor.executemany(
-            "INSERT INTO sub_metering_stats (type, total) VALUES (%s, %s)",
-            sub_data
-        )
+    # ======================
+    # SUB METERING (REPLACE)
+    # ======================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sub_metering_stats (
+        type VARCHAR(50) PRIMARY KEY,
+        total DOUBLE
+    )
+    """)
 
-        print("sub_metering_stats inserted")
+    cursor.execute("DELETE FROM sub_metering_stats")
 
-        conn.commit()
-        print("Commit berhasil ✅")
+    sub = result["sub_metering"]
 
-    except Exception as e:
-        print("Error ❌:", e)
+    sub_data = [
+        ("sub1", sub["sub1"]),
+        ("sub2", sub["sub2"]),
+        ("sub3", sub["sub3"]),
+    ]
 
-    finally:
-        try:
-            cursor.close()
-            conn.close()
-        except:
-            pass
+    cursor.executemany("""
+    INSERT INTO sub_metering_stats (type, total)
+    VALUES (%s, %s)
+    """, sub_data)
 
-    print("Selesai 🚀")
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    print("ETL Done ✅")
 
 if __name__ == "__main__":
     main()
