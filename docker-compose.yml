@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+
+  python-analytics:
+    build: .
+
+    container_name: python-analytics
+
+    restart: unless-stopped
+
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DB_PORT: ${DB_PORT}
+
+    command: python main.py
