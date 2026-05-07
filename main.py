@@ -5,7 +5,7 @@ from analysis import transform
 def main():
     print("Start ETL...")
 
-    df = fetch_dataframe("SELECT * FROM electricity_usage")
+    df = fetch_dataframe("SELECT * FROM dataset")
 
     result = transform(df)
 
