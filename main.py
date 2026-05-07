@@ -1,17 +1,32 @@
 from db import fetch_dataframe, get_connection
 from analysis import transform
 
-def main():
+
+def run_etl():
+
     print("Start ETL...")
 
+    # ======================
+    # FETCH DATA
+    # ======================
     df = fetch_dataframe("SELECT * FROM dataset")
 
-    result = transform(df)
-
-    if not result:
+    if df.empty:
         print("No data")
         return
 
+    # ======================
+    # ANALYSIS
+    # ======================
+    result = transform(df)
+
+    if not result:
+        print("Analysis failed")
+        return
+
+    # ======================
+    # DB CONNECTION
+    # ======================
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -202,11 +217,16 @@ def main():
     VALUES (%s, %s)
     """, sub_data)
 
+    # ======================
+    # COMMIT
+    # ======================
     conn.commit()
+
     cursor.close()
     conn.close()
 
     print("ETL Done ✅")
 
+
 if __name__ == "__main__":
-    main()
+    run_etl()
