@@ -1,4 +1,3 @@
-#analysis.py
 import pandas as pd
 
 def transform(df):
@@ -34,6 +33,8 @@ def transform(df):
     df['date_only'] = df['datetime'].dt.date
     df['hour'] = df['datetime'].dt.hour
     df['month'] = df['datetime'].dt.to_period('M').astype(str)
+    df['week'] = df['datetime'].dt.to_period('W').astype(str)
+    df['day_name'] = df['datetime'].dt.day_name()
 
     # ======================
     # 1. DAILY USAGE
@@ -45,7 +46,7 @@ def transform(df):
     )
 
     # ======================
-    # 2. HOURLY GLOBAL
+    # 2. HOURLY USAGE
     # ======================
     hourly_usage = (
         df.groupby('hour')['global_active_power']
@@ -53,15 +54,39 @@ def transform(df):
         .reset_index(name='avg_power')
     )
 
-    peak_row = hourly_usage.loc[
-        hourly_usage['avg_power'].idxmax()
-    ]
-
+    peak_row = hourly_usage.loc[hourly_usage['avg_power'].idxmax()]
     peak_hour = int(peak_row['hour'])
     peak_value = float(peak_row['avg_power'])
 
     # ======================
-    # 3. MONTHLY HOURLY
+    # 3. WEEKLY USAGE
+    # ======================
+    weekly_usage = (
+        df.groupby('week')['global_active_power']
+        .sum()
+        .reset_index(name='total_power')
+    )
+
+    # ======================
+    # 4. MONTHLY USAGE
+    # ======================
+    monthly_usage = (
+        df.groupby('month')['global_active_power']
+        .sum()
+        .reset_index(name='total_power')
+    )
+
+    # ======================
+    # 5. WEEKDAY PATTERN
+    # ======================
+    weekday_pattern = (
+        df.groupby('day_name')['global_active_power']
+        .mean()
+        .reset_index(name='avg_power')
+    )
+
+    # ======================
+    # 6. MONTHLY HOURLY USAGE
     # ======================
     monthly_hourly_usage = (
         df.groupby(['month', 'hour'])['global_active_power']
@@ -70,21 +95,23 @@ def transform(df):
     )
 
     # ======================
-    # 4. PEAK PER BULAN
+    # 7. PEAK PER MONTH
     # ======================
     peak_monthly = monthly_hourly_usage.loc[
         monthly_hourly_usage.groupby('month')['avg_power'].idxmax()
     ]
 
+    peak_monthly = peak_monthly.rename(columns={'avg_power': 'value'})
+
     # ======================
-    # 5. STATS
+    # 8. SUMMARY STATS
     # ======================
     avg_usage = float(df['global_active_power'].mean())
     max_usage = float(df['global_active_power'].max())
     min_usage = float(df['global_active_power'].min())
 
     # ======================
-    # 6. SUB METERING
+    # 9. SUB METERING
     # ======================
     sub_metering = {
         "sub1": float(df['sub_metering_1'].sum()),
@@ -95,6 +122,9 @@ def transform(df):
     return {
         "daily_usage": daily_usage,
         "hourly_usage": hourly_usage,
+        "weekly_usage": weekly_usage,
+        "monthly_usage": monthly_usage,
+        "weekday_pattern": weekday_pattern,
         "monthly_hourly_usage": monthly_hourly_usage,
         "peak_monthly": peak_monthly,
         "avg_usage": avg_usage,
