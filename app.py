@@ -3,6 +3,9 @@ from main import run_etl
 
 app = Flask(__name__)
 
+print("Python Analytic Container is running")
+print("Trigger the ETL process by sending a POST request to /run-etl endpoint")
+
 @app.route("/")
 def home():
     return {
