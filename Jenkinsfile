@@ -1,51 +1,64 @@
 pipeline {
 agent any
 
-    options {
-        buildDiscarder(logRotator(numToKeepStr: '10'))
+```
+options {
+    buildDiscarder(logRotator(numToKeepStr: '10'))
+}
+
+environment {
+    IMAGE_NAME = "python-analytics"
+}
+
+stages {
+
+    stage('Checkout') {
+        steps {
+            git branch: 'main',
+            url: 'https://github.com/puj16/electrical-Usage-Analytic.git'
+        }
     }
 
-    environment {
-        IMAGE_NAME = "python-analytics"
+    stage('Build Docker Image') {
+        steps {
+            sh '''
+                docker build -t ${IMAGE_NAME}:latest .
+            '''
+        }
     }
 
-    stages {
-
-        stage('Checkout') {
-            steps {
-                git branch: 'main',
-                url: 'https://github.com/puj16/electrical-Usage-Analytic.git'
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
+    stage('Deploy Container') {
+        steps {
+            withCredentials([file(credentialsId: 'python-analytics-env', variable: 'ENV_FILE')]) {
                 sh '''
-                    docker build -t ${IMAGE_NAME}:latest .
-                '''
-            }
-        }
+                    cp $ENV_FILE .env
 
-        stage('Deploy Container') {
-            steps {
-                sh '''
                     docker compose down || true
                     docker compose up -d
                 '''
             }
         }
-
     }
 
-    post {
-        success {
-            echo 'Deploy berhasil ✅'
-        }
-
-        failure {
-            echo 'Deploy gagal ❌'
+    stage('Cleanup Old Images') {
+        steps {
+            sh '''
+                docker image prune -f
+            '''
         }
     }
 
+}
+
+post {
+    success {
+        echo 'Deploy berhasil ✅'
+    }
+
+    failure {
+        echo 'Deploy gagal ❌'
+    }
+}
+```
 
 }
