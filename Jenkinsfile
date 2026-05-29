@@ -31,7 +31,9 @@ agent any
             steps {
                 withCredentials([file(credentialsId: 'python-analytics-env', variable: 'ENV_FILE')]) {
                     sh '''
+                        rm -f .env
                         cp $ENV_FILE .env
+                        chmod 600 .env
 
                         docker compose down || true
                         docker compose up -d
